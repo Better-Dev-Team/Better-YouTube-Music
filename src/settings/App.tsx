@@ -27,6 +27,24 @@ function App() {
     progress?: number;
     downloaded?: boolean;
   }>({ type: 'idle' });
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+
+  useEffect(() => {
+    if (selectedPlugin === 'audio-output') {
+      refreshAudioDevices();
+    }
+  }, [selectedPlugin]);
+
+  const refreshAudioDevices = async () => {
+    try {
+      // Check permission or just try
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputs = devices.filter(d => d.kind === 'audiooutput');
+      setAudioDevices(outputs);
+    } catch (e) {
+      console.error('Error fetching audio devices:', e);
+    }
+  };
 
   useEffect(() => {
     loadPlugins();
@@ -268,27 +286,112 @@ function App() {
       case 'lastfm':
         return (
           <div className="plugin-settings">
-            <p className="plugin-description">Scrobble YouTube Music to Last.fm</p>
-            <div className="setting-item">
-              <label>API Key:</label>
-              <input
-                type="text"
-                value={config.apiKey || ''}
-                onChange={e => updatePluginConfig(plugin.name, 'apiKey', e.target.value)}
-                placeholder="Your Last.fm API key"
-              />
-            </div>
-            <div className="setting-item">
-              <label>API Secret:</label>
-              <input
-                type="password"
-                value={config.apiSecret || ''}
-                onChange={e => updatePluginConfig(plugin.name, 'apiSecret', e.target.value)}
-                placeholder="Your Last.fm API secret"
-              />
-            </div>
-            <small>Get your API credentials from https://www.last.fm/api/account/create</small>
+            <p className="plugin-description">Scrobble YouTube Music to Last.fm and love tracks</p>
+
+            {!config.sessionKey ? (
+              <div className="auth-section">
+                <p style={{ marginBottom: '10px' }}>Connect your Last.fm account to enable scrobbling.</p>
+
+                <button
+                  className="update-btn"
+                  disabled={!config.apiKey || !config.apiSecret}
+                  onClick={async () => {
+                    if (!config.apiKey || !config.apiSecret) return;
+
+                    try {
+                      // 1. Get Token
+                      const authUrl = `https://ws.audioscrobbler.com/2.0/?method=auth.getToken&api_key=${config.apiKey}&format=json`;
+                      const res = await fetch(authUrl);
+                      const data = await res.json();
+
+                      if (data.token) {
+                        // 2. Open Auth Page
+                        window.open(`http://www.last.fm/api/auth/?api_key=${config.apiKey}&token=${data.token}`, '_blank');
+
+                        // 3. Poll for session (or let user click "Finish")
+                        // For simplicity, we'll ask user to click a 'Complete Login' button after they approve
+                        const token = data.token;
+                        updatePluginConfig(plugin.name, 'tempToken', token);
+                        alert('Please approve the app in the browser window that just opened, then click "Complete Login" below.');
+                      } else {
+                        alert('Error getting token: ' + data.message);
+                      }
+                    } catch (e: any) {
+                      alert('Error: ' + e.message);
+                    }
+                  }}
+                >
+                  Connect Account
+                </button>
+
+                {config.tempToken && (
+                  <button
+                    className="update-btn ready"
+                    style={{ marginTop: '10px' }}
+                    onClick={async () => {
+                      if (!config.tempToken) return;
+
+                      try {
+                        const params = {
+                          api_key: config.apiKey,
+                          method: 'auth.getSession',
+                          token: config.tempToken
+                        };
+
+                        const sig = await window.electronAPI.invoke('lastfm-signature', params, config.apiSecret);
+
+                        const sessionUrl = `https://ws.audioscrobbler.com/2.0/?method=auth.getSession&api_key=${config.apiKey}&token=${config.tempToken}&api_sig=${sig}&format=json`;
+                        const res = await fetch(sessionUrl);
+                        const data = await res.json();
+
+                        if (data.session) {
+                          // Perform atomic update to avoid race conditions
+                          const newConfig = {
+                            ...config,
+                            sessionKey: data.session.key,
+                            username: data.session.name,
+                            tempToken: undefined
+                          };
+
+                          await window.electronAPI.setPluginConfig(plugin.name, newConfig);
+                          setPluginConfigs(prev => ({
+                            ...prev,
+                            [plugin.name]: newConfig,
+                          }));
+
+                        } else {
+                          alert('Error getting session: ' + data.message);
+                        }
+                      } catch (e: any) {
+                        alert('Error: ' + e.message);
+                      }
+                    }}
+                  >
+                    Complete Login
+                  </button>
+                )}
+
+                <small style={{ display: 'block', marginTop: 10 }}>
+                  Need an API account? <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener noreferrer" style={{ color: '#4a9eff' }}>Create one here</a>
+                </small>
+              </div>
+            ) : (
+              <div className="auth-success">
+                <p>✅ Connected as <strong>{config.username || 'User'}</strong></p>
+                <button
+                  className="update-btn"
+                  style={{ backgroundColor: '#ff4444', marginTop: '10px' }}
+                  onClick={() => {
+                    updatePluginConfig(plugin.name, 'sessionKey', undefined);
+                    updatePluginConfig(plugin.name, 'username', undefined);
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
           </div>
+
         );
 
       case 'visualizer':
@@ -469,6 +572,74 @@ function App() {
           </div>
         );
 
+
+      case 'listenbrainz':
+        return (
+          <div className="plugin-settings">
+            <p className="plugin-description">Scrobble YouTube Music tracks to ListenBrainz</p>
+
+            <div className="setting-item">
+              <label>User Token:</label>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                <input
+                  type="password"
+                  value={config.token || ''}
+                  onChange={e => updatePluginConfig(plugin.name, 'token', e.target.value)}
+                  placeholder="Enter your User Token"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <small style={{ display: 'block', marginTop: '10px', color: '#888' }}>
+                You can find your User Token on your <a href="https://listenbrainz.org/profile/" target="_blank" rel="noopener noreferrer" style={{ color: '#4a9eff' }}>ListenBrainz Profile</a> page.
+              </small>
+            </div>
+          </div>
+        );
+
+      case 'companion-server':
+        return (
+          <div className="plugin-settings">
+            <p className="plugin-description">API Server for external widgets (Amuse, Stream Deck)</p>
+            <div className="setting-item">
+              <label>Server Port:</label>
+              <input
+                type="number"
+                value={config.port || 9863}
+                onChange={e => updatePluginConfig(plugin.name, 'port', parseInt(e.target.value))}
+                style={{ width: '100px' }}
+              />
+            </div>
+            <small style={{ color: '#888', display: 'block', marginTop: '8px' }}>
+              Standard port for YouTube Music Desktop App is 9863. Change only if needed or conflicting.
+            </small>
+          </div>
+        );
+
+      case 'audio-output':
+        return (
+          <div className="plugin-settings">
+            <p className="plugin-description">Select output device for music playback</p>
+            <div className="setting-item">
+              <label>Audio Device:</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <select
+                  value={config.deviceId || ''}
+                  onChange={e => updatePluginConfig(plugin.name, 'deviceId', e.target.value)}
+                  style={{ flex: 1, padding: '5px' }}
+                >
+                  <option value="">Default System Output</option>
+                  {audioDevices.map((device, index) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Device ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+                <button onClick={refreshAudioDevices} style={{ padding: '5px 10px' }}>↻</button>
+              </div>
+            </div>
+          </div>
+        );
+
       default:
         return (
           <div className="plugin-settings">
@@ -507,7 +678,7 @@ function App() {
                   </div>
                   <p className="plugin-card-desc">Remove YouTube recommendations, shorts, comments, and distractions</p>
                   {selectedPlugin === 'unhook' && (
-                    <div className="plugin-card-settings">
+                    <div className="plugin-card-settings" onClick={e => e.stopPropagation()}>
                       {renderPluginSettings(plugins.find(p => p.name === 'unhook')!)}
                     </div>
                   )}
@@ -517,7 +688,7 @@ function App() {
               {plugins
                 .filter(plugin => {
                   // Only show essential/commonly used plugins (bad-ui is secret!)
-                  const essentialPlugins = ['adblocker', 'sponsorblock', 'downloader', 'unhook', 'discord-rpc', 'browser-ui'];
+                  const essentialPlugins = ['adblocker', 'sponsorblock', 'downloader', 'unhook', 'discord-rpc', 'browser-ui', 'lastfm', 'listenbrainz', 'companion-server', 'audio-output'];
                   return essentialPlugins.includes(plugin.name);
                 })
                 .map(plugin => (
@@ -548,7 +719,7 @@ function App() {
                       <p className="plugin-card-desc">{plugin.description}</p>
                     )}
                     {selectedPlugin === plugin.name && (
-                      <div className="plugin-card-settings">
+                      <div className="plugin-card-settings" onClick={e => e.stopPropagation()}>
                         {renderPluginSettings(plugin)}
                       </div>
                     )}

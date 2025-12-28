@@ -45,12 +45,24 @@ export const buildDiscordButtons = (
   videoInfo: VideoInfo,
 ): Array<{ label: string; url: string }> | undefined => {
   const buttons: Array<{ label: string; url: string }> = [];
+
+  // Validate URL before adding button - must be a proper URL
   if (config.playOnYouTube && videoInfo.url) {
-    buttons.push({
-      label: 'Watch on YouTube',
-      url: videoInfo.url,
-    });
+    try {
+      const url = new URL(videoInfo.url);
+      // Only add if it's a valid http/https URL
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        buttons.push({
+          label: 'Watch on YouTube',
+          url: videoInfo.url,
+        });
+      }
+    } catch {
+      // Invalid URL, skip this button
+      console.warn('[Discord] Invalid video URL, skipping button:', videoInfo.url);
+    }
   }
+
   if (!config.hideGitHubButton) {
     buttons.push({
       label: 'View App On GitHub',

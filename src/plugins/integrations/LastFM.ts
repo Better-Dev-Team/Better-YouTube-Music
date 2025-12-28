@@ -46,45 +46,51 @@ export class LastFM extends BasePlugin {
       }
 
       // Last.fm API methods
-      async function scrobble(artist, track, album, timestamp) {
+      async function makeRequest(params) {
         try {
-          const params = {
-            method: 'track.scrobble',
-            api_key: config.apiKey,
-            sk: config.sessionKey,
-            artist: artist,
-            track: track,
-            timestamp: timestamp.toString(),
-            format: 'json'
-          };
-          
-          if (album) {
-            params.album = album;
-          }
-
           const sig = await getSignature(params, config.apiSecret);
           if (!sig) {
             console.error('[LastFM] Could not generate signature');
-            return false;
+            return null;
           }
           params.api_sig = sig;
 
-          const response = await fetch('https://ws.audioscrobbler.com/2.0/', {
+          // Use IPC to request from main process (avoids CORS)
+          const response = await window.electronAPI.invoke('lastfm-request', 'https://ws.audioscrobbler.com/2.0/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams(params)
+            body: new URLSearchParams(params).toString()
           });
-          
-          const data = await response.json();
-          if (data.error) {
-            console.error('[LastFM] Scrobble error:', data.message);
-            return false;
-          } else {
-            console.log('[LastFM] ✅ Scrobbled:', track, 'by', artist);
-            return true;
-          }
-        } catch (error) {
-          console.error('[LastFM] Error scrobbling:', error);
+
+          return response;
+        } catch (e) {
+          console.error('[LastFM] Request failed:', e);
+          return null;
+        }
+      }
+
+      async function scrobble(artist, track, album, timestamp) {
+        const params = {
+          method: 'track.scrobble',
+          api_key: config.apiKey,
+          sk: config.sessionKey,
+          artist: artist,
+          track: track,
+          timestamp: timestamp.toString(),
+          format: 'json'
+        };
+        
+        if (album) {
+          params.album = album;
+        }
+
+        const data = await makeRequest(params);
+        
+        if (data && !data.error) {
+          console.log('[LastFM] ✅ Scrobbled:', track, 'by', artist);
+          return true;
+        } else {
+          console.error('[LastFM] Scrobble error:', data ? data.message : 'Unknown error');
           return false;
         }
       }
@@ -97,47 +103,42 @@ export class LastFM extends BasePlugin {
         }
         lastUpdateTime = now;
 
-        try {
-          const params = {
-            method: 'track.updateNowPlaying',
-            api_key: config.apiKey,
-            sk: config.sessionKey,
-            artist: artist,
-            track: track,
-            format: 'json'
-          };
-          
-          if (album) {
-            params.album = album;
-          }
+        const params = {
+          method: 'track.updateNowPlaying',
+          api_key: config.apiKey,
+          sk: config.sessionKey,
+          artist: artist,
+          track: track,
+          format: 'json'
+        };
+        
+        if (album) {
+          params.album = album;
+        }
 
-          const sig = await getSignature(params, config.apiSecret);
-          if (!sig) {
-            console.error('[LastFM] Could not generate signature');
-            return false;
-          }
-          params.api_sig = sig;
+        const data = await makeRequest(params);
 
-          const response = await fetch('https://ws.audioscrobbler.com/2.0/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams(params)
-          });
-          
-          const data = await response.json();
-          if (data.error) {
-            console.error('[LastFM] Now playing error:', data.message);
-          } else {
-            console.log('[LastFM] Now playing:', track, 'by', artist);
-          }
-        } catch (error) {
-          console.error('[LastFM] Error updating now playing:', error);
+        if (data && !data.error) {
+          console.log('[LastFM] Now playing:', track, 'by', artist);
+        } else {
+          console.error('[LastFM] Now playing error:', data ? data.message : 'Unknown error');
         }
       }
 
       // Extract track info from YouTube Music
       function getTrackInfo() {
         try {
+          // 1. Try MediaSession API (Most reliable for metadata)
+          if (navigator.mediaSession && navigator.mediaSession.metadata) {
+            const meta = navigator.mediaSession.metadata;
+            return {
+              track: meta.title,
+              artist: meta.artist,
+              album: meta.album || null
+            };
+          }
+
+          // 2. Fallback to DOM selectors
           // YouTube Music player bar selectors
           const titleElement = document.querySelector(
             'ytmusic-player-bar .title, ' +
@@ -203,6 +204,8 @@ export class LastFM extends BasePlugin {
         const trackInfo = getTrackInfo();
         const video = document.querySelector('video');
         
+        console.log('[LastFM] Checking track. Video:', !!video, 'TrackInfo:', trackInfo);
+
         if (!trackInfo || !video) {
           return;
         }
@@ -330,8 +333,10 @@ export class LastFM extends BasePlugin {
       } else {
         setTimeout(setupWatcher, 500);
       }
-    })();
-    `;
+
+    }) ();
+
+`;
   }
 
   public async onRendererLoaded(window: BrowserWindow): Promise<void> {
@@ -348,10 +353,11 @@ export class LastFM extends BasePlugin {
 
   public getConfig() {
     return {
-      apiKey: '',
-      apiSecret: '',
       sessionKey: '', // Obtained through OAuth
+      username: '',   // Store username for context
       ...super.getConfig(),
+      apiKey: '083dc925d5f8909a311691773d5de171',
+      apiSecret: 'a09d06b4c63593cce45c7324766445e2',
     };
   }
 }

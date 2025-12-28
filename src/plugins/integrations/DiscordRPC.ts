@@ -22,44 +22,41 @@ export class DiscordRPCPlugin extends BasePlugin {
   public async onAppReady(): Promise<void> {
     console.log('[DiscordRPC] onAppReady called, enabled:', this.isEnabled());
 
-    // Register IPC handler for video updates from renderer (only once)
-    if (!ipcMain.listenerCount('discord-rpc-update-video')) {
-      console.log('[DiscordRPC] Registering IPC handlers');
-
-      const pluginInstance = this;
-
-      ipcMain.handle('discord-rpc-update-video', (_event, videoData: any) => {
-        if (pluginInstance.isEnabled() && pluginInstance.discordService) {
-          // Convert video data to VideoInfo format
-          const videoInfo: VideoInfo = {
-            id: videoData.id,
-            videoId: videoData.id,
-            title: videoData.title,
-            channel: videoData.channel,
-            startTime: videoData.startTime || Date.now(),
-            url: videoData.url || `https://www.youtube.com/watch?v=${videoData.id}`,
-            imageSrc: videoData.imageSrc || `https://img.youtube.com/vi/${videoData.id}/maxresdefault.jpg`,
-            isPaused: videoData.isPaused || false,
-            elapsedSeconds: videoData.elapsedSeconds,
-            songDuration: videoData.songDuration,
-          };
-          pluginInstance.discordService.updateActivity(videoInfo);
-        }
-        return true;
-      });
-
-      ipcMain.handle('discord-rpc-clear', () => {
-        if (pluginInstance.isEnabled() && pluginInstance.discordService) {
-          pluginInstance.discordService.clearActivity();
-        }
-      });
-    }
+    // IPC handlers are now managed in main/index.ts to support multiple plugins (Companion Server)
 
     // Initialize if enabled
     if (this.isEnabled()) {
       console.log('[DiscordRPC] Plugin is enabled, will initialize when window is ready');
     }
   }
+
+  public updateState(videoData: any) {
+    if (this.isEnabled() && this.discordService) {
+      // Convert video data to VideoInfo format
+      const videoInfo: VideoInfo = {
+        id: videoData.id,
+        videoId: videoData.id,
+        title: videoData.title,
+        channel: videoData.channel,
+        startTime: videoData.startTime || Date.now(),
+        url: videoData.url || `https://www.youtube.com/watch?v=${videoData.id}`,
+        imageSrc: videoData.imageSrc || `https://img.youtube.com/vi/${videoData.id}/maxresdefault.jpg`,
+        isPaused: videoData.isPaused || false,
+        elapsedSeconds: videoData.elapsedSeconds,
+        songDuration: videoData.songDuration,
+      };
+      this.discordService.updateActivity(videoInfo);
+    }
+  }
+
+  public clearState() {
+    if (this.isEnabled() && this.discordService) {
+      this.discordService.clearActivity();
+    }
+  }
+
+  // Initialize if enabled
+
 
   public async onWindowCreated(window: BrowserWindow): Promise<void> {
     this.mainWindow = window;
@@ -148,60 +145,80 @@ export class DiscordRPCPlugin extends BasePlugin {
 
       function getVideoInfo() {
         const videoId = getVideoId();
-        if (!videoId) return null;
-        
-        const currentUrl = window.location.href;
-        if (!currentUrl.includes('/watch') && !currentUrl.includes('/shorts/')) {
-          return null;
-        }
-
+        // Allow if we have a video element, even if ID is tricky (YTM sometimes hides it in cleaner URLs but MediaSession knows)
         const video = document.querySelector('video');
-        const isPaused = video ? video.paused : false;
-        const elapsedSeconds = video ? video.currentTime : 0;
-        const songDuration = video ? video.duration : 0;
+        if (!video) return null;
+        
+        const isPaused = video.paused;
+        const elapsedSeconds = video.currentTime;
+        const songDuration = video.duration;
 
-        // Get title
         let title = '';
-        const titleSelectors = [
-          'h1.ytd-watch-metadata yt-formatted-string',
-          'h1.ytd-video-primary-info-renderer yt-formatted-string',
-          'h1.title.style-scope.ytd-video-primary-info-renderer',
-          'h1.ytd-watch-metadata',
-          'h1.ytd-video-primary-info-renderer',
-        ];
-        
-        for (const selector of titleSelectors) {
-          const element = document.querySelector(selector);
-          if (element) {
-            title = (element.textContent && element.textContent.trim()) || (element.innerText && element.innerText.trim()) || '';
-            if (title && title !== 'YouTube') break;
+        let channel = '';
+        let thumbnailUrl = '';
+        let finalVideoId = videoId;
+
+        // 1. Try MediaSession (Best for YTM)
+        if (navigator.mediaSession && navigator.mediaSession.metadata) {
+          const meta = navigator.mediaSession.metadata;
+          title = meta.title || '';
+          channel = meta.artist || meta.album || ''; // Artist is usually improved
+          
+          if (meta.artwork && meta.artwork.length > 0) {
+            // Get the largest artwork
+             const artwork = meta.artwork.reduce((prev, current) => {
+              return (prev.sizes && current.sizes) 
+                ? (parseInt(prev.sizes.split('x')[0]) > parseInt(current.sizes.split('x')[0]) ? prev : current)
+                : current;
+            });
+            thumbnailUrl = artwork.src;
           }
         }
-        
+
+        // 2. Fallback to YTM DOM selectors if MediaSession failed or is incomplete
+        if (!title) {
+           const titleElement = document.querySelector('ytmusic-player-bar .title');
+           if (titleElement) title = titleElement.textContent?.trim() || '';
+        }
+
+        if (!channel) {
+          const artistElement = document.querySelector('ytmusic-player-bar .byline');
+          if (artistElement) channel = artistElement.textContent?.trim() || '';
+        }
+
+        // 3. Last Result: Regular YouTube selectors (existing logic preserved as deep fallback)
+        if (!title) {
+            const titleSelectors = [
+              'h1.ytd-watch-metadata yt-formatted-string',
+              'h1.ytd-video-primary-info-renderer yt-formatted-string',
+            ];
+            for (const selector of titleSelectors) {
+              const el = document.querySelector(selector);
+              if (el) { title = el.textContent?.trim() || ''; break; }
+            }
+        }
+
         if (!title || title === 'YouTube') {
-          title = document.title.replace(' - YouTube', '').trim();
+          title = document.title.replace(' - YouTube', '').replace(' - YouTube Music', '').trim();
         }
-
-        // Get channel
-        let channel = 'Unknown Channel';
-        const channelSelectors = [
-          'ytd-channel-name #text a',
-          'ytd-video-owner-renderer .ytd-channel-name a',
-          '#channel-name a',
-        ];
         
-        for (const selector of channelSelectors) {
-          const element = document.querySelector(selector);
-          if (element) {
-            channel = (element.textContent && element.textContent.trim()) || (element.innerText && element.innerText.trim()) || 'Unknown Channel';
-            if (channel) break;
-          }
+        if (!channel || channel === 'Unknown Channel') {
+           // Fallback channel selectors
+           const channelSelectors = ['ytd-channel-name #text a', '#channel-name a'];
+           for (const selector of channelSelectors) {
+              const el = document.querySelector(selector);
+              if (el) { channel = el.textContent?.trim() || ''; break; }
+           }
         }
+        
+        if (!channel) channel = 'Unknown Artist';
 
-        let thumbnailUrl = 'https://img.youtube.com/vi/' + videoId + '/maxresdefault.jpg';
+        if (!thumbnailUrl && finalVideoId) {
+          thumbnailUrl = 'https://img.youtube.com/vi/' + finalVideoId + '/maxresdefault.jpg';
+        }
 
         return { 
-          id: videoId, 
+          id: finalVideoId || title, // Use title as ID if no video ID found (just for uniqueness checks)
           title, 
           channel, 
           thumbnailUrl,

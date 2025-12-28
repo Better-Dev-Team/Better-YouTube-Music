@@ -11,17 +11,20 @@ import {
   Unhook,
   AlbumColorTheme,
   BetterFullscreen,
-  Visualizer,
+
   InAppMenu,
   AppMenuBar,
   DiscordRPCPlugin,
   LastFM,
+  ListenBrainz,
+  CompanionServer,
   AudioCompressor,
   ExponentialVolume,
   VolumeBooster,
+  AudioOutput,
   BrowserUI,
 } from '../plugins';
-import { config } from '../config/Config';
+// import { config } from '../config/Config';
 import { copyDefaultPlugins } from './copy-plugins';
 
 let mainWindow: BrowserWindow | null = null;
@@ -593,9 +596,14 @@ ipcMain.handle('set-plugin-config', async (_event, pluginName: string, pluginCon
 ipcMain.handle('lastfm-signature', (_event, params: Record<string, string>, secret: string) => {
   const crypto = require('crypto');
   const sortedKeys = Object.keys(params).sort();
-  const sigString = sortedKeys
-    .map(key => key + params[key])
-    .join('') + secret;
+  let sigString = '';
+
+  sortedKeys.forEach(key => {
+    if (key === 'format' || key === 'callback' || key === 'api_sig') return;
+    sigString += key + params[key];
+  });
+
+  sigString += secret;
   return crypto.createHash('md5').update(sigString).digest('hex');
 });
 
@@ -698,17 +706,70 @@ app.whenReady().then(async () => {
   pluginLoader.registerPlugin(new Downloader('downloader'));
   pluginLoader.registerPlugin(new Unhook('unhook'));
 
+  ipcMain.handle('lastfm-request', async (_event, url: string, options: any) => {
+    try {
+      const { net } = require('electron');
+      const response = await net.fetch(url, options);
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error('[LastFM] Request failed:', error);
+      return { error: true, message: error.message };
+    }
+  });
+
+
+
+
+  ipcMain.handle('listenbrainz-request', async (_event, url: string, options: any) => {
+    try {
+      const { net } = require('electron');
+      const response = await net.fetch(url, options);
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error('[ListenBrainz] Request failed:', error);
+      return { error: true, message: error.message };
+    }
+  });
+
   pluginLoader.registerPlugin(new AlbumColorTheme('album-color-theme'));
   pluginLoader.registerPlugin(new BetterFullscreen('better-fullscreen'));
-  pluginLoader.registerPlugin(new Visualizer('visualizer'));
+
   pluginLoader.registerPlugin(new InAppMenu('in-app-menu'));
   pluginLoader.registerPlugin(new AppMenuBar('app-menu-bar'));
   pluginLoader.registerPlugin(new BrowserUI('browser-ui'));
   pluginLoader.registerPlugin(new DiscordRPCPlugin('discord-rpc'));
+
   pluginLoader.registerPlugin(new LastFM('lastfm'));
+  pluginLoader.registerPlugin(new ListenBrainz('listenbrainz'));
+  pluginLoader.registerPlugin(new CompanionServer('companion-server'));
   pluginLoader.registerPlugin(new AudioCompressor('audio-compressor'));
   pluginLoader.registerPlugin(new ExponentialVolume('exponential-volume'));
   pluginLoader.registerPlugin(new VolumeBooster('volume-booster'));
+  pluginLoader.registerPlugin(new AudioOutput('audio-output'));
+
+  // Centralized Media Update Handler
+  ipcMain.handle('discord-rpc-update-video', (_event, videoData: any) => {
+    const discordPlugin = pluginLoader?.getPlugin('discord-rpc') as DiscordRPCPlugin;
+    if (discordPlugin && discordPlugin.isEnabled()) {
+      discordPlugin.updateState(videoData);
+    }
+
+    const companionPlugin = pluginLoader?.getPlugin('companion-server') as CompanionServer;
+    if (companionPlugin && companionPlugin.isEnabled()) {
+      companionPlugin.updateState(videoData);
+    }
+    return true;
+  });
+
+  ipcMain.handle('discord-rpc-clear', () => {
+    const discordPlugin = pluginLoader?.getPlugin('discord-rpc') as DiscordRPCPlugin;
+    if (discordPlugin && discordPlugin.isEnabled()) {
+      discordPlugin.clearState();
+    }
+    // Companion server might want to know about clearing, but usually it just shows paused
+  });
 
   // Copy default plugins to user data directory
   await copyDefaultPlugins();
