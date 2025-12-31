@@ -215,7 +215,7 @@ export class BrowserUI extends BasePlugin {
             }
             
             html, body {
-              padding-top: \${titleBarHeight}px !important;
+              /* padding-top is handled in app-specific sections to avoid conflicts */
               margin-top: 0 !important;
               box-sizing: border-box !important;
               overflow-x: hidden !important;
@@ -244,9 +244,16 @@ export class BrowserUI extends BasePlugin {
                ========================================================================= */
 
             /* Push the main app down to accommodate our titlebar */
-            html, body, ytmusic-app {
+            html, body {
+               height: 100vh !important;
+               overflow: hidden !important; /* Let the app handle scrolling */
+               margin-top: 0 !important;
+               box-sizing: border-box !important;
+            }
+
+            ytmusic-app {
               margin-top: 0 !important;
-              padding-top: 0 !important; /* CRITICAL: Remove body padding to prevent double-spacing causing black bar */
+              padding-top: 0 !important;
             }
 
             /* The main navigation bar in YouTube Music */
@@ -274,6 +281,30 @@ export class BrowserUI extends BasePlugin {
             /* Ensure the nav-bar background is solid so content doesn't show behind it */
             ytmusic-nav-bar {
               background-color: #030303 !important;
+              border-bottom: none !important;
+              box-shadow: none !important;
+            }
+            
+            /* Remove any potential pseudo-element borders but keep content visible */
+            ytmusic-nav-bar::before,
+            ytmusic-nav-bar::after,
+            ytmusic-nav-bar #nav-bar-divider {
+              display: none !important;
+            }
+            
+            /* Clean up the nav bar container logic */
+            ytmusic-nav-bar .left-content,
+            ytmusic-nav-bar .center-content,
+            ytmusic-nav-bar .right-content {
+               border: none !important;
+               box-shadow: none !important;
+               background: transparent !important;
+            }
+            
+            ytmusic-nav-bar,
+            #nav-bar-background {
+              border-bottom: none !important;
+              box-shadow: none !important;
             }
 
             /* Fix "Giant Black Bar" / Scrolling overlay issue */
@@ -281,12 +312,15 @@ export class BrowserUI extends BasePlugin {
               padding-top: 0 !important; 
               display: flex !important;
               flex-direction: column !important;
-              height: 100vh !important;
+              height: 100% !important; /* Fill the padded body */
+              width: 100% !important;
             }
             
             /* Enable scrolling on the layout container */
             ytmusic-app-layout {
               flex: 1 !important;
+              margin-top: \${titleBarHeight}px !important; /* CRITICAL: Scrollbar starts below title bar */
+              height: calc(100vh - \${titleBarHeight}px) !important;
               overflow-x: hidden !important;
               overflow-y: auto !important; /* CRITICAL: Allow scrolling */
               display: flex !important;
@@ -300,14 +334,13 @@ export class BrowserUI extends BasePlugin {
             ytmusic-app-layout #guide-wrapper,
             #mini-guide-layer {
               position: fixed !important;
-              top: calc(\${titleBarHeight}px + 64px) !important;
+              top: calc(\${titleBarHeight}px + 72px) !important;
               left: 0 !important;
-              max-height: calc(100vh - \${titleBarHeight}px - 64px - 72px) !important; /* Account for player bar */
-              height: calc(100vh - \${titleBarHeight}px - 64px - 72px) !important;
-              overflow-y: auto !important;
-              overflow-x: hidden !important;
-              z-index: 100 !important; /* Below navbar (2022) but above content */
-              background-color: #030303 !important; /* Match background to prevent see-through */
+              max-height: calc(100vh - \${titleBarHeight}px - 72px) !important; /* Account for player bar */
+              height: calc(100vh - \${titleBarHeight}px - 72px) !important;
+              z-index: 2021 !important;
+              display: block !important;
+              visibility: visible !important;
             }
             
             /* Ensure sidebar content scrolls properly */
@@ -364,6 +397,20 @@ export class BrowserUI extends BasePlugin {
               /* If this is the element sliding up, we need to let it, but often the 
                  misbehavior is the bar itself thinking it should cover more space. */
               z-index: 2000 !important;
+            }
+
+            /* FIX: Mini Player / PIP Clipping & Positioning */
+            /* Ensure the video player itself is above the player bar when needed */
+            #player.ytmusic-player,
+            .html5-video-player {
+              z-index: 2024 !important; /* Above player bar (2023) */
+            }
+
+            /* Specific fix for when player is in 'mini' or docked mode */
+            ytmusic-player[player-ui-state*=MINI] {
+               transform: translateY(-125px) !important;
+               z-index: 2024 !important;
+               box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important; /* Visual help */
             }
 
             /* Adjust content scroll area */
