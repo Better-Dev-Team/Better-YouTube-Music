@@ -723,8 +723,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('listenbrainz-request', async (_event, url: string, options: any) => {
     try {
-      const { net } = require('electron');
-      const response = await net.fetch(url, options);
+      const fetch = require('cross-fetch');
+      const response = await fetch(url, options);
       const data = await response.json();
       return data;
     } catch (error: any) {

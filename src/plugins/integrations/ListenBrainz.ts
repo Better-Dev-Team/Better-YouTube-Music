@@ -7,15 +7,15 @@ import type { PluginMetadata } from '../Plugin';
  * Scrobbles YouTube Music tracks to ListenBrainz
  */
 export class ListenBrainz extends BasePlugin {
-    public metadata: PluginMetadata = {
-        name: 'listenbrainz',
-        description: 'Scrobble YouTube Music tracks to ListenBrainz',
-        version: '1.0.0',
-    };
+  public metadata: PluginMetadata = {
+    name: 'listenbrainz',
+    description: 'Scrobble YouTube Music tracks to ListenBrainz',
+    version: '1.0.0',
+  };
 
-    private getRendererScript(): string {
-        const config = JSON.stringify(this.getConfig());
-        return `
+  private getRendererScript(): string {
+    const config = JSON.stringify(this.getConfig());
+    return `
     (function() {
       'use strict';
       
@@ -61,7 +61,8 @@ export class ListenBrainz extends BasePlugin {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Authorization': 'Token ' + config.token
+              'Authorization': 'Token ' + config.token,
+              'User-Agent': 'Better YouTube Music/2.3.0 (https://github.com/Yabosen/Better-Youtube)'
             },
             body: JSON.stringify(payload)
           });
@@ -212,24 +213,24 @@ export class ListenBrainz extends BasePlugin {
 
     }) ();
     `;
+  }
+
+  public async onRendererLoaded(window: BrowserWindow): Promise<void> {
+    if (!this.isEnabled()) return;
+
+    const config = this.getConfig();
+    if (!config.token) {
+      console.warn('[ListenBrainz] Token not configured');
+      return;
     }
 
-    public async onRendererLoaded(window: BrowserWindow): Promise<void> {
-        if (!this.isEnabled()) return;
+    await this.injectRendererScript(window, this.getRendererScript());
+  }
 
-        const config = this.getConfig();
-        if (!config.token) {
-            console.warn('[ListenBrainz] Token not configured');
-            return;
-        }
-
-        await this.injectRendererScript(window, this.getRendererScript());
-    }
-
-    public getConfig() {
-        return {
-            token: '',
-            ...super.getConfig(),
-        };
-    }
+  public getConfig() {
+    return {
+      token: '',
+      ...super.getConfig(),
+    };
+  }
 }
