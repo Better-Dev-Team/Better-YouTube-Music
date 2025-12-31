@@ -638,7 +638,7 @@ ipcMain.handle('window-action', (_event, action: string) => {
       }
       break;
     case 'close':
-      mainWindow?.close();
+      mainWindow?.destroy();
       break;
     case 'restart':
       app.relaunch();
