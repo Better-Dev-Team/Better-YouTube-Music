@@ -119,7 +119,7 @@ export class DiscordService {
     }
 
     const activityInfo: any = {
-      type: ActivityType.Watching,
+      type: ActivityType.Listening,
       details: truncateString(videoInfo.title || 'YouTube Video', 128),
       state: truncateString(videoInfo.channel || 'Unknown Channel', 128),
       largeImageKey: imageKey,

@@ -62,50 +62,72 @@ export class VolumeBooster extends BasePlugin {
       }
 
       function injectIntoTitleBar() {
-        // Target the window section of the title bar
-        const windowSection = document.querySelector('#browser-ui-titlebar .window-section');
-        if (!windowSection) return;
+        // Target the new button container from BrowserUI
+        const container = document.getElementById('browser-ui-buttons');
+        if (!container) return;
         
         if (document.getElementById('volume-booster-btn')) return;
 
-        // Find the settings button (purple button) to insert before
-        const settingsBtn = windowSection.querySelector('.settings-btn');
-        if (!settingsBtn) return;
+        // Try to insert before the divider (separating nav from settings)
+        // If no divider, insert before settings button, or just append
+        let referenceNode = container.querySelector('.divider');
+        if (!referenceNode) {
+          referenceNode = container.querySelector('.settings-btn');
+        }
 
         const btn = document.createElement('button');
         btn.id = 'volume-booster-btn';
-        btn.className = 'nav-btn'; // Re-use nav-btn class for consistency if available, or just style it
+        btn.className = 'nav-btn'; // Re-use nav-btn class from BrowserUI
         btn.title = 'Volume Boost';
         btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
         
-        // Match style with other title bar buttons
+        // Match style with BrowserUI buttons
+        // Note: .nav-btn class in BrowserUI handles most styles (hover, transition)
+        // We just ensure specific overrides if needed
         btn.style.cssText = \`
-          background: transparent;
+          width: 32px;
+          height: 32px;
           border: none;
-          color: #e1e1e1;
+          background: transparent;
+          color: rgba(255, 255, 255, 0.7);
           cursor: pointer;
-          padding: 0 10px;
-          height: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
-          -webkit-app-region: no-drag;
-          transition: color 0.2s;
+          border-radius: 8px;
+          transition: all 0.15s ease;
+          padding: 0;
+          outline: none;
           position: relative;
+          -webkit-app-region: no-drag;
         \`;
 
         btn.addEventListener('mouseenter', () => {
+          btn.style.background = 'rgba(255, 255, 255, 0.1)';
           btn.style.color = '#fff';
           showVolumeDropdown(btn);
         });
 
         btn.addEventListener('mouseleave', () => {
-           btn.style.color = '#e1e1e1';
+           btn.style.background = 'transparent';
+           btn.style.color = 'rgba(255, 255, 255, 0.7)';
            // Let dropdown logic handle closing
         });
+        
+        btn.addEventListener('mousedown', () => {
+           btn.style.transform = 'scale(0.92)';
+        });
+        
+        btn.addEventListener('mouseup', () => {
+           btn.style.transform = 'scale(1)';
+        });
 
-        // Insert before the settings button
-        windowSection.insertBefore(btn, settingsBtn);
+        // Insert at correct position
+        if (referenceNode) {
+          container.insertBefore(btn, referenceNode);
+        } else {
+          container.appendChild(btn);
+        }
         
         // Init audio
         initAudio();

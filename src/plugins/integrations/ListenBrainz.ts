@@ -20,8 +20,16 @@ export class ListenBrainz extends BasePlugin {
       'use strict';
       
       const config = ${config};
+      
+      // DEBUG: Always log config status
+      console.log('[ListenBrainz] Config loaded:', { 
+        enabled: config.enabled, 
+        hasToken: !!config.token,
+        tokenLength: config.token ? config.token.length : 0 
+      });
+
       if (!config.enabled || !config.token) {
-        console.log('[ListenBrainz] Plugin disabled or token missing');
+        console.warn('[ListenBrainz] Plugin disabled or token missing');
         return;
       }
 
@@ -31,10 +39,13 @@ export class ListenBrainz extends BasePlugin {
       let scrobbled = false;
       let startTime = null;
       let lastUpdateTime = 0;
-      const UPDATE_INTERVAL = 30000; // Update now playing every 30 seconds
+      const UPDATE_INTERVAL = 30000; 
 
       // ListenBrainz API methods
       async function submitListen(listenType, artist, track, album, timestamp) {
+        // DEBUG: Log submission attempt
+        console.log(\`[ListenBrainz] Submitting \${listenType}:\`, { artist, track, album, timestamp });
+
         try {
           const payload = {
             listen_type: listenType,
@@ -75,7 +86,7 @@ export class ListenBrainz extends BasePlugin {
             }
             return true;
           } else {
-            console.error('[ListenBrainz] Error:', response ? response.message : 'Unknown error');
+            console.error('[ListenBrainz] Error response:', response);
             return false;
           }
         } catch (e) {
@@ -87,32 +98,64 @@ export class ListenBrainz extends BasePlugin {
       // Extract track info from YouTube Music
       function getTrackInfo() {
         try {
+          let track = '';
+          let artist = '';
+          let album = null;
+          let source = 'none'; // DEBUG: Track source
+
           // 1. Try MediaSession API (Most reliable for metadata)
           if (navigator.mediaSession && navigator.mediaSession.metadata) {
             const meta = navigator.mediaSession.metadata;
-            return {
-              track: meta.title,
-              artist: meta.artist,
-              album: meta.album || null
-            };
+            track = meta.title;
+            artist = meta.artist;
+            album = meta.album || null;
+            source = 'MediaSession';
           }
 
-          // 2. Fallback to DOM selectors
-          const titleElement = document.querySelector('ytmusic-player-bar .title');
-          const artistElement = document.querySelector('ytmusic-player-bar .byline');
+          // 2. Fallback to DOM selectors if MediaSession is incomplete
+          if (!track) {
+             const titleElement = document.querySelector('ytmusic-player-bar .title');
+             if (titleElement) {
+                 track = titleElement.textContent?.trim() || '';
+                 source = 'DOM-Title';
+             }
+          }
+
+          if (!artist) {
+            const artistElement = document.querySelector('ytmusic-player-bar .byline');
+            if (artistElement) {
+              const text = artistElement.textContent?.trim() || '';
+              const parts = text.split('•');
+              if (parts.length > 0) {
+                artist = parts[0].trim();
+                source = 'DOM-Byline';
+              }
+              
+              if (!album && parts.length > 1) {
+                 // heuristic for album
+              }
+            }
+          }
+
+          // 3. Last Resort: Document title
+          if (!track || track === 'YouTube Music') {
+             const docTitle = document.title;
+             const separator = docTitle.lastIndexOf('-');
+             if (separator > 0) {
+               track = docTitle.substring(0, separator).trim();
+               if (!artist) artist = docTitle.substring(separator + 1).replace('- YouTube Music', '').trim();
+               source = 'DocTitle';
+             } else {
+               track = docTitle.replace('- YouTube Music', '').trim();
+             }
+          }
+
+          if (track && artist) {
+             // DEBUG: Log detected track info periodically or on change
+             // We won't log every millisecond, but the caller handles that
+             return { track, artist, album, source };
+          }
           
-          if (titleElement && artistElement) {
-            const track = titleElement.textContent?.trim() || '';
-            // Artist might have "Views" or time concatenated, usually handled by MediaSession better
-            // Ideally we rely on MediaSession, but basic text content fallback:
-            let artist = artistElement.textContent?.trim() || '';
-            // Basic cleanup if needed, but keeping it simple for now
-            
-            const albumElement = document.querySelector('ytmusic-player-bar .album');
-            const album = albumElement?.textContent?.trim() || null;
-
-            return { track, artist, album };
-          }
           return null;
         } catch (error) {
           console.error('[ListenBrainz] Error getting track info:', error);
@@ -133,11 +176,12 @@ export class ListenBrainz extends BasePlugin {
         
         // New track detected
         if (trackId !== currentTrack?.id) {
-          console.log('[ListenBrainz] New track detected:', trackInfo);
+          console.log('[ListenBrainz] New track detected:', trackInfo, 'Source:', trackInfo.source);
           currentTrack = {
             id: trackId,
             ...trackInfo
           };
+          
           scrobbled = false;
           startTime = Date.now();
           
@@ -151,6 +195,7 @@ export class ListenBrainz extends BasePlugin {
           const scrobbleThreshold = Math.max(duration * 0.5, 240); // 50% or 4 minutes
           
           if (video.currentTime >= scrobbleThreshold) {
+            console.log('[ListenBrainz] Scrobble threshold reached', { currentTime: video.currentTime, threshold: scrobbleThreshold });
             const timestamp = Math.floor(startTime / 1000);
             submitListen(
               'import',
@@ -162,15 +207,11 @@ export class ListenBrainz extends BasePlugin {
             scrobbled = true;
           }
         }
-
-        // Update now playing periodically
-        // ListenBrainz documentation recommends refreshing 'playing_now' occasionally if desired, 
-        // but it's not strictly required like Last.fm's might be. 
-        // We'll skip periodic updates for now to reduce API chatter unless needed.
       }
 
       // Watch for changes with MutationObserver
       function setupWatcher() {
+        console.log('[ListenBrainz] Setting up watcher...');
         if (!document.body) {
           setTimeout(setupWatcher, 500);
           return;
@@ -184,16 +225,22 @@ export class ListenBrainz extends BasePlugin {
           });
 
           if (playerBar) {
+            console.log('[ListenBrainz] Watching player bar...');
             observer.observe(playerBar, {
               childList: true,
               subtree: true,
               characterData: true
             });
+          } else {
+             console.warn('[ListenBrainz] Player bar not found yet');
           }
 
           const video = document.querySelector('video');
           if (video) {
-            video.addEventListener('timeupdate', checkTrack); // Using timeupdate is robust
+            console.log('[ListenBrainz] Watching video element...');
+            video.addEventListener('timeupdate', checkTrack); 
+          } else {
+             console.warn('[ListenBrainz] Video element not found yet');
           }
            
            // Periodic check as fallback

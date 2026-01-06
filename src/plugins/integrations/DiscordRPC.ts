@@ -7,7 +7,7 @@ import type { VideoInfo } from './discord/utils';
 
 /**
  * Discord Rich Presence Plugin
- * Shows "Watching [Video]" on Discord using the improved DiscordService
+ * Shows "Listening to [Video]" on Discord using the improved DiscordService
  */
 export class DiscordRPCPlugin extends BasePlugin {
   public metadata: PluginMetadata = {

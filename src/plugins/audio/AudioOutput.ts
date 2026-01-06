@@ -49,12 +49,40 @@ export class AudioOutput extends BasePlugin {
            const video = document.querySelector('video');
            if (!video || typeof video.setSinkId !== 'function') return;
            
+           // If target is empty, we just want default
+           if (!targetDeviceId) {
+               if (video.sinkId !== '') {
+                   try {
+                       await video.setSinkId('');
+                       console.log('[AudioOutput] Reset to default audio device');
+                   } catch (err) {
+                       console.warn('[AudioOutput] Error resetting sinkId:', err.name, err.message);
+                   }
+               }
+               return;
+           }
+
+           // Validate device exists
+           try {
+               const devices = await navigator.mediaDevices.enumerateDevices();
+               const audioDevices = devices.filter(d => d.kind === 'audiooutput');
+               const deviceExists = audioDevices.some(d => d.deviceId === targetDeviceId);
+               
+               if (!deviceExists) {
+                   console.log('[AudioOutput] Target device not found:', targetDeviceId, 'Available:', audioDevices.map(d => d.label));
+                   return; 
+               }
+           } catch (e) {
+               console.warn('[AudioOutput] Error enumerating devices:', e);
+               // Proceed anyway if enumeration fails, might be a permission issue but setSinkId might work
+           }
+
            if (video.sinkId !== targetDeviceId) {
                try {
                    await video.setSinkId(targetDeviceId);
-                   console.log('[AudioOutput] Applied audio device:', targetDeviceId || 'default');
+                   console.log('[AudioOutput] Applied audio device:', targetDeviceId);
                } catch (err) {
-                   console.warn('[AudioOutput] Error setting sinkId:', err);
+                   console.warn('[AudioOutput] Error setting sinkId:', err.name, err.message);
                }
            }
         }
@@ -67,16 +95,6 @@ export class AudioOutput extends BasePlugin {
         
         // Also interval check
         setInterval(updateAudioDevice, 2000);
-        
-        // Listen for config changes from main process if we set up IPC? 
-        // For now, onConfigChanged in main re-executes the setter, which is fine.
-        // But to make the script aware of updates from the re-execution, 
-        // the re-execution snippet (in onConfigChangedFunc) works.
-        // This script's primary job is ensuring NEW video elements get the device.
-        
-        // We need to allow the renderer to receive updates.
-        // Actually, re-declaring 'targetDeviceId' in a new execution context won't update THIS closure.
-        // So we should expose a global function or variable.
         
         window.__setAudioOutputDevice = (id) => {
             targetDeviceId = id;

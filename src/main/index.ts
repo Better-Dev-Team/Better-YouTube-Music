@@ -52,7 +52,7 @@ function checkDevServer(port: number): Promise<boolean> {
 }
 
 async function createMainWindow() {
-  console.log('--- Operation Terminator - Version 2.3.0-M2-Terminator Loaded ---');
+  console.log('--- Release Version 1.0.0 HI-MEARF Loaded ---');
   // Icon path - try .ico first, then .png
   let iconPath: string | undefined;
   if (app.isPackaged) {
@@ -88,8 +88,13 @@ async function createMainWindow() {
       backgroundThrottling: false // Prevent throttling when window loses focus
     },
     autoHideMenuBar: true,
-    frame: false, // Frameless to allow custom title bar
+    frame: false,
     titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#000000',
+      symbolColor: '#ffffff',
+      height: 32 // Match our button height preference
+    },
     show: false
   });
 
@@ -578,8 +583,8 @@ ipcMain.handle('set-plugin-config', async (_event, pluginName: string, pluginCon
   if (plugin) {
     plugin.setConfig(pluginConfig);
 
-    // Special handling for Discord RPC - reinitialize when config changes
-    if (pluginName === 'discord-rpc' && (plugin as any).onConfigChanged) {
+    // Generic handling: call onConfigChanged if the plugin implements it
+    if ((plugin as any).onConfigChanged) {
       await (plugin as any).onConfigChanged();
     }
 
@@ -687,6 +692,16 @@ app.whenReady().then(async () => {
   const pluginsDir = join(userDataPath, 'plugins');
   pluginLoader = new PluginLoader(pluginsDir);
   pluginLoader.setSession(session.defaultSession);
+
+  // Handle permission requests (required for Audio Output device enumeration)
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = ['media', 'mediaKeySystem', 'audioCapture', 'notifications', 'fullscreen'];
+    if (allowedPermissions.includes(permission)) {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
 
   // Check for updates immediately
   autoUpdater.checkForUpdatesAndNotify().catch(err => {
