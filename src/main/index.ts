@@ -23,6 +23,7 @@ import {
   VolumeBooster,
   AudioOutput,
   BrowserUI,
+  BetterLyrics,
 } from '../plugins';
 // import { config } from '../config/Config';
 import { copyDefaultPlugins } from './copy-plugins';
@@ -52,7 +53,7 @@ function checkDevServer(port: number): Promise<boolean> {
 }
 
 async function createMainWindow() {
-  console.log('--- Release Version 1.0.1 HI-MEARF Loaded ---');
+  console.log('--- Release Version 1.2.0 HI-MEARF Loaded ---');
   // Icon path - try .ico first, then .png
   let iconPath: string | undefined;
   if (app.isPackaged) {
@@ -768,6 +769,29 @@ app.whenReady().then(async () => {
   pluginLoader.registerPlugin(new ExponentialVolume('exponential-volume'));
   pluginLoader.registerPlugin(new VolumeBooster('volume-booster'));
   pluginLoader.registerPlugin(new AudioOutput('audio-output'));
+  pluginLoader.registerPlugin(new BetterLyrics('better-lyrics'));
+
+  // Load Chrome Extensions (Disabled due to rendering issues)
+  /*
+  try {
+    const extensionPath = join(app.getAppPath(), 'extensions', 'better-lyrics', 'dist', 'chrome');
+    if (existsSync(extensionPath)) {
+      await session.defaultSession.loadExtension(extensionPath);
+      console.log('Loaded Better Lyrics Extension');
+    } else {
+      // Fallback dev path
+      const devPath = join(__dirname, '../../extensions/better-lyrics/dist/chrome');
+      if (existsSync(devPath)) {
+        await session.defaultSession.loadExtension(devPath);
+        console.log('Loaded Better Lyrics Extension (Dev Path)');
+      } else {
+        console.warn('Better Lyrics extension directory not found:', extensionPath);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load Chrome Extension:', e);
+  }
+  */
 
   // Centralized Media Update Handler
   ipcMain.handle('discord-rpc-update-video', (_event, videoData: any) => {

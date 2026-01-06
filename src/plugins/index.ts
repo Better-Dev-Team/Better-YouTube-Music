@@ -21,6 +21,7 @@ export { BetterFullscreen } from './ui/BetterFullscreen';
 export { InAppMenu } from './ui/InAppMenu';
 export { AppMenuBar } from './ui/AppMenuBar';
 export { BrowserUI } from './ui/BrowserUI';
+export { BetterLyrics } from './ui/BetterLyrics';
 
 // Integration Plugins
 export { DiscordRPCPlugin } from './integrations/DiscordRPC';
