@@ -203,6 +203,25 @@ export class VolumeBooster extends BasePlugin {
          sliderContainer.appendChild(slider);
          sliderContainer.appendChild(label);
          
+         // Scroll to change volume
+         sliderContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const current = parseFloat(slider.value);
+            // Scroll Up (deltaY < 0) = Increase, Scroll Down (deltaY > 0) = Decrease
+            const delta = e.deltaY < 0 ? 0.1 : -0.1;
+            let newVal = current + delta;
+            
+            // Clamp between 1 and 10
+            newVal = Math.min(Math.max(newVal, 1), 10);
+            
+            // Apply if changed
+            if (newVal !== current) {
+                slider.value = newVal.toString();
+                // Trigger input event to update gain
+                slider.dispatchEvent(new Event('input'));
+            }
+         });
+         
          dropdown.appendChild(title);
          dropdown.appendChild(sliderContainer);
          

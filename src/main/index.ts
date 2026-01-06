@@ -52,7 +52,7 @@ function checkDevServer(port: number): Promise<boolean> {
 }
 
 async function createMainWindow() {
-  console.log('--- Release Version 1.0.0 HI-MEARF Loaded ---');
+  console.log('--- Release Version 1.0.1 HI-MEARF Loaded ---');
   // Icon path - try .ico first, then .png
   let iconPath: string | undefined;
   if (app.isPackaged) {
@@ -247,6 +247,11 @@ async function createMainWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Force close when X is clicked, ignoring YouTube's "Are you sure?" prompt
+  mainWindow.webContents.on('will-prevent-unload', (event) => {
+    event.preventDefault();
   });
 
   // Call onWindowCreated for all enabled plugins
