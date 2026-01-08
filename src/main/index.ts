@@ -91,11 +91,7 @@ async function createMainWindow() {
     autoHideMenuBar: true,
     frame: false,
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#000000',
-      symbolColor: '#ffffff',
-      height: 32 // Match our button height preference
-    },
+    // No titleBarOverlay - we use our own custom title bar
     show: false
   });
 
@@ -106,31 +102,7 @@ async function createMainWindow() {
     callback({ responseHeaders });
   });
 
-  // Inject Trusted Types bypass into MAIN WORLD before page scripts run
-  // Using worldId: 'main' runs in the main world, not isolated context
-  mainWindow.webContents.on('did-start-loading', () => {
-    mainWindow?.webContents.executeJavaScript(`
-      (function() {
-        if (window.trustedTypes && window.trustedTypes.createPolicy) {
-          try {
-            window.trustedTypes.createPolicy('default', {
-              createHTML: (string) => string,
-              createScript: (string) => string,
-              createScriptURL: (string) => string
-            });
-          } catch(e) {
-            try {
-              window.trustedTypes.createPolicy('electron-permissive', {
-                createHTML: (string) => string,
-                createScript: (string) => string,
-                createScriptURL: (string) => string
-              });
-            } catch(e2) {}
-          }
-        }
-      })();
-    `, { worldId: 'main' } as any).catch(() => { });
-  });
+  // Note: Trusted Types bypass handled in did-finish-load to avoid duplicate injection
 
   // Open DevTools only in development
   if (!app.isPackaged && process.env.NODE_ENV !== 'production') {
@@ -221,27 +193,18 @@ async function createMainWindow() {
         pluginLoader.callOnRendererLoaded(mainWindow);
       }
 
-      // Inject settings button
-      injectSettingsButton(mainWindow);
+      // Settings button is now part of BrowserUI plugin
     }
   });
 
   // Handle navigation (including YouTube SPA navigation)
+  // Only handle did-navigate, not did-navigate-in-page (BrowserUI handles SPA via MutationObserver)
   mainWindow.webContents.on('did-navigate', () => {
     setTimeout(() => {
       if (mainWindow && pluginLoader) {
         pluginLoader.callOnRendererLoaded(mainWindow);
       }
-    }, 1000);
-  });
-
-  // Handle in-page navigation (YouTube uses SPA, so this is important)
-  mainWindow.webContents.on('did-navigate-in-page', () => {
-    setTimeout(() => {
-      if (mainWindow && pluginLoader) {
-        pluginLoader.callOnRendererLoaded(mainWindow);
-      }
-    }, 1000);
+    }, 300); // Reduced from 1000ms for faster response
   });
 
   // Discord RPC is handled by DiscordRPCPlugin
@@ -491,59 +454,8 @@ async function createSettingsWindow(show = true) {
   });
 }
 
-// Inject settings button overlay
-function injectSettingsButton(window: BrowserWindow) {
-  const script = `
-    (function() {
-      function createSettingsButton() {
-        if (!document.body || !(document.body instanceof Node)) {
-          setTimeout(createSettingsButton, 100);
-          return;
-        }
-        
-        try {
-          // Remove existing button if present
-          const existing = document.getElementById('better-youtube-settings-btn');
-          if (existing) existing.remove();
-          
-          // Create button element directly (avoid innerHTML for Trusted Types)
-          const button = document.createElement('div');
-          button.id = 'better-youtube-settings-btn';
-          button.textContent = '⚙️ Settings';
-          button.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 999999; background: rgba(0, 0, 0, 0.8); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 12px; color: white; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); transition: background 0.2s;';
-          
-          button.addEventListener('mouseover', () => {
-            button.style.background = 'rgba(0, 0, 0, 0.95)';
-          });
-          button.addEventListener('mouseout', () => {
-            button.style.background = 'rgba(0, 0, 0, 0.8)';
-          });
-          
-          // Add click handler
-          if (window.electronAPI) {
-            button.addEventListener('click', () => {
-              window.electronAPI.openSettings();
-            });
-          }
-          
-          document.body.appendChild(button);
-        } catch (error) {
-          console.error('Error creating settings button:', error);
-        }
-      }
-      
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', createSettingsButton);
-      } else {
-        setTimeout(createSettingsButton, 100);
-      }
-    })();
-  `;
-
-  window.webContents.executeJavaScript(script, true).catch(err => {
-    console.error('Error injecting settings button:', err);
-  });
-}
+// Old settings button - now handled by BrowserUI plugin
+// function injectSettingsButton removed - see BrowserUI.ts
 
 // IPC Handlers
 ipcMain.handle('open-settings', () => {
@@ -709,10 +621,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Check for updates immediately
-  autoUpdater.checkForUpdatesAndNotify().catch(err => {
-    console.error('Failed to check for updates:', err);
-  });
+  // Auto-update check is done later after window is ready (see setTimeout below)
 
   // Register all plugins
   const adBlocker = new AdBlocker('adblocker');

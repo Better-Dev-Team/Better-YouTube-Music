@@ -198,10 +198,10 @@ export class AppMenuBar extends BasePlugin {
               });
             }
             
-            // Check periodically as backup
+            // Check periodically as backup (reduced frequency for performance)
             const fullscreenCheck = setInterval(() => {
               updateMenuBarVisibility();
-            }, 200);
+            }, 1000);
             
             // Clean up on page unload
             window.addEventListener('beforeunload', () => {
@@ -490,17 +490,14 @@ function showAboutDialog() {
           createMenuBar();
         }
         
-        // Re-inject on navigation
+        // Re-inject on navigation (simple interval instead of expensive MutationObserver)
         let lastUrl = location.href;
-        const observer = new MutationObserver(() => {
-          const url = location.href;
-          if (url !== lastUrl) {
-            lastUrl = url;
-            setTimeout(createMenuBar, 500);
+        setInterval(() => {
+          if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            setTimeout(createMenuBar, 300);
           }
-        });
-        
-        observer.observe(document, { subtree: true, childList: true });
+        }, 3000);
       })();
     `;
   }

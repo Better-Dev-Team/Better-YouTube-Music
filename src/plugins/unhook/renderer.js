@@ -1,7 +1,7 @@
 // Unhook / UI Cleaner Plugin
 // Allows hiding various YouTube UI elements
 
-(function() {
+(function () {
   'use strict';
 
   // Default configuration
@@ -73,13 +73,13 @@
 
   // Re-inject on navigation
   let lastUrl = location.href;
-  new MutationObserver(() => {
+  setInterval(() => {
     const url = location.href;
     if (url !== lastUrl) {
       lastUrl = url;
       setTimeout(init, 500);
     }
-  }).observe(document, { subtree: true, childList: true });
+  }, 2000);
 
 })();
 

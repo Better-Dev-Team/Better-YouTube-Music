@@ -42,30 +42,33 @@ export const SharedRendererUtils = `
   history.pushState = patch('pushState');
   history.replaceState = patch('replaceState');
 
-  // 2. Video Discovery
-  let debounceTimer = null;
-  const observer = new MutationObserver(() => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const video = document.querySelector('video');
-      if (video && !videoFound) {
-        videoFound = true;
-        listeners.videoFound.forEach(cb => {
-          try { cb(video); } catch(e) { console.error('[BetterYouTubeUtils] Video error:', e); }
-        });
-      } else if (!video) {
-        videoFound = false;
-      }
-    }, 500);
-  });
+  // 2. Video Discovery (Optimized)
+  let checkInterval = null;
 
-  if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      observer.observe(document.body, { childList: true, subtree: true });
-    });
+  function checkForVideo() {
+    const video = document.querySelector('video');
+    if (video && !videoFound) {
+      videoFound = true;
+      listeners.videoFound.forEach(cb => {
+        try { cb(video); } catch(e) { console.error('[BetterYouTubeUtils] Video error:', e); }
+      });
+      // Slow down checks once found
+      if (checkInterval) clearInterval(checkInterval);
+      checkInterval = setInterval(checkForVideo, 5000);
+    } else if (!video) {
+        videoFound = false;
+        // Search more aggressively if lost
+        if (checkInterval) clearInterval(checkInterval);
+        checkInterval = setInterval(checkForVideo, 1000);
+    }
   }
+
+  // Check on important events
+  window.addEventListener('yt-navigate-finish', checkForVideo);
+  window.addEventListener('click', () => setTimeout(checkForVideo, 500));
+  
+  // Initial check loop
+  checkInterval = setInterval(checkForVideo, 1000);
 
   // 3. API Export
   window.BetterYouTubeUtils = {

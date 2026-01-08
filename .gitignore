@@ -1,10 +1,71 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
 release/
-*.log
-.DS_Store
+out/
+*.tsbuildinfo
+
+# IDE and editors
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
+*.sublime-workspace
+*.sublime-project
+
+# Vite
 .vite/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Environment files
 *.local
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+
+# Build error logs
+build_error.txt
+
+# Electron builder cache
+.electron-builder-cache/
+
+# user-plugins with contents (keep the folder, ignore contents)
+user-plugins/*
+!user-plugins/.gitkeep
+
+# Discord RPC credentials (sensitive)
+discord/*.json
+!discord/example.json
+
+# Extensions build artifacts (if any)
+extensions/*/dist/
+extensions/*/node_modules/
+
+# Coverage reports
+coverage/
+
+# Test outputs
+test-results/
+playwright-report/

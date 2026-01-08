@@ -1,7 +1,7 @@
 // SponsorBlock Plugin
 // Skips sponsored segments in YouTube videos
 
-(function() {
+(function () {
   'use strict';
 
   let currentVideoId = null;
@@ -33,7 +33,7 @@
   // Create skip button
   function createSkipButton() {
     if (skipButton) return;
-    
+
     skipButton = document.createElement('button');
     skipButton.id = 'sponsorblock-skip';
     skipButton.textContent = '⏭️ Skip Sponsor';
@@ -52,11 +52,11 @@
       font-weight: bold;
       display: none;
     `;
-    
+
     skipButton.addEventListener('click', () => {
       skipSegment();
     });
-    
+
     document.body.appendChild(skipButton);
   }
 
@@ -66,7 +66,7 @@
     if (!video) return;
 
     const currentTime = video.currentTime;
-    
+
     for (const segment of segments) {
       if (currentTime >= segment.segment[0] && currentTime < segment.segment[1]) {
         video.currentTime = segment.segment[1];
@@ -99,21 +99,21 @@
     }
 
     const currentTime = video.currentTime;
-    
+
     for (const segment of segments) {
       if (currentTime >= segment.segment[0] && currentTime < segment.segment[1]) {
         showSkipButton();
         return;
       }
     }
-    
+
     hideSkipButton();
   }
 
   // Initialize SponsorBlock
   async function init() {
     const videoId = getVideoId();
-    
+
     if (!videoId) {
       return;
     }
@@ -124,7 +124,7 @@
 
     currentVideoId = videoId;
     segments = await fetchSegments(videoId);
-    
+
     createSkipButton();
 
     // Check for segments periodically
@@ -143,13 +143,13 @@
 
   // Re-initialize on navigation
   let lastUrl = location.href;
-  new MutationObserver(() => {
+  setInterval(() => {
     const url = location.href;
     if (url !== lastUrl) {
       lastUrl = url;
       setTimeout(init, 1000);
     }
-  }).observe(document, { subtree: true, childList: true });
+  }, 2000);
 
 })();
 

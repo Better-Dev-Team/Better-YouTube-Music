@@ -28,6 +28,7 @@ export class VolumeBooster extends BasePlugin {
       let sourceNode = null;
       let gainNode = null;
       let isHooked = false;
+      let buttonInjected = false;
 
       // Initialize Web Audio API
       function initAudio() {
@@ -52,6 +53,7 @@ export class VolumeBooster extends BasePlugin {
              video.__volumeBoosterAttached = true;
              video.__gainNode = gainNode;
              isHooked = true;
+             console.log('[VolumeBooster] ✅ Audio hooked');
           } else {
              gainNode = video.__gainNode;
              isHooked = true;
@@ -62,28 +64,31 @@ export class VolumeBooster extends BasePlugin {
       }
 
       function injectIntoTitleBar() {
+        // Already injected? Skip
+        if (buttonInjected && document.getElementById('volume-booster-btn')) return;
+        
         // Target the new button container from BrowserUI
         const container = document.getElementById('browser-ui-buttons');
-        if (!container) return;
-        
-        if (document.getElementById('volume-booster-btn')) return;
-
-        // Try to insert before the divider (separating nav from settings)
-        // If no divider, insert before settings button, or just append
-        let referenceNode = container.querySelector('.divider');
-        if (!referenceNode) {
-          referenceNode = container.querySelector('.settings-btn');
+        if (!container) {
+          // Container not ready yet - wait silently
+          return;
         }
+        
+        // Double-check we haven't already injected
+        if (document.getElementById('volume-booster-btn')) {
+          buttonInjected = true;
+          return;
+        }
+
+        // Insert before the settings button (which is before the divider)
+        const settingsBtn = container.querySelector('.settings-btn');
 
         const btn = document.createElement('button');
         btn.id = 'volume-booster-btn';
-        btn.className = 'nav-btn'; // Re-use nav-btn class from BrowserUI
+        btn.className = 'nav-btn';
         btn.title = 'Volume Boost';
-        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
         
-        // Match style with BrowserUI buttons
-        // Note: .nav-btn class in BrowserUI handles most styles (hover, transition)
-        // We just ensure specific overrides if needed
         btn.style.cssText = \`
           width: 32px;
           height: 32px;
@@ -94,11 +99,10 @@ export class VolumeBooster extends BasePlugin {
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: 8px;
+          border-radius: 6px;
           transition: all 0.15s ease;
           padding: 0;
           outline: none;
-          position: relative;
           -webkit-app-region: no-drag;
         \`;
 
@@ -111,7 +115,6 @@ export class VolumeBooster extends BasePlugin {
         btn.addEventListener('mouseleave', () => {
            btn.style.background = 'transparent';
            btn.style.color = 'rgba(255, 255, 255, 0.7)';
-           // Let dropdown logic handle closing
         });
         
         btn.addEventListener('mousedown', () => {
@@ -122,12 +125,15 @@ export class VolumeBooster extends BasePlugin {
            btn.style.transform = 'scale(1)';
         });
 
-        // Insert at correct position
-        if (referenceNode) {
-          container.insertBefore(btn, referenceNode);
+        // Insert before settings button
+        if (settingsBtn) {
+          container.insertBefore(btn, settingsBtn);
         } else {
-          container.appendChild(btn);
+          container.insertBefore(btn, container.firstChild);
         }
+        
+        buttonInjected = true;
+        console.log('[VolumeBooster] ✅ Button injected into title bar');
         
         // Init audio
         initAudio();
@@ -243,8 +249,12 @@ export class VolumeBooster extends BasePlugin {
          });
       }
 
-      // Main loop
+      // Main loop - try to inject, stop when done
       const interval = setInterval(() => {
+         if (buttonInjected) {
+           clearInterval(interval);
+           return;
+         }
          injectIntoTitleBar();
       }, 1000);
       

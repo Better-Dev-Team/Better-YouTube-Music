@@ -3,450 +3,328 @@ import type { PluginMetadata } from '../Plugin';
 import { BrowserWindow } from 'electron';
 
 /**
- * BrowserUI Plugin
- * Adds browser-like navigation controls (back, forward, refresh, settings) to the title bar overlay area
- * Works WITH the native Windows title bar (titleBarOverlay)
+ * BrowserUI Plugin for YouTube Music
+ * Adds browser-like navigation controls and a unified title bar with integrated search
  */
 export class BrowserUI extends BasePlugin {
-  public metadata: PluginMetadata = {
-    name: 'browser-ui',
-    description: 'Adds browser navigation controls (back, forward, refresh) to the title bar',
-    version: '2.0.0',
-  };
+    public metadata: PluginMetadata = {
+        name: 'browser-ui',
+        description: 'Adds browser navigation controls and unified title bar to YouTube Music',
+        version: '2.0.0',
+    };
 
-  private getRendererScript(): string {
-    const config = JSON.stringify(this.getConfig());
-    return `
+    private getRendererScript(): string {
+        const config = JSON.stringify(this.getConfig());
+        return `
       (function() {
-        console.log('[BrowserUI] Initializing overlay buttons...');
+        'use strict';
+        console.log('[BrowserUI] ========== Initializing YouTube Music Title Bar ==========');
         const config = ${config};
+        const isEnabled = config.enabled !== false;
         
-        if (!config.enabled) {
-          console.log('[BrowserUI] Plugin disabled');
-          return;
+        if (!isEnabled) return;
+
+        let titleBarInjected = false;
+
+        // --- CSS Styles ---
+        function injectStyles() {
+            if (document.getElementById('browser-ui-ytm-style')) return;
+            
+            const style = document.createElement('style');
+            style.id = 'browser-ui-ytm-style';
+            style.textContent = \`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+
+                /* --- Custom Title Bar --- */
+                #better-ytm-titlebar {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    height: 48px;
+                    background: #0f0f0f;
+                    border-bottom: 1px solid #272727;
+                    z-index: 999999;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 0 8px;
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                    -webkit-app-region: drag;
+                }
+
+                /* --- Left Section (Nav) --- */
+                #better-ytm-titlebar .nav-section {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    -webkit-app-region: no-drag;
+                }
+
+                /* --- Center Section (Search) --- */
+                #better-ytm-titlebar .search-section {
+                    flex: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    max-width: 600px;
+                    margin: 0 20px;
+                    -webkit-app-region: no-drag;
+                }
+
+                #better-ytm-titlebar .search-section ytmusic-search-box {
+                    width: 100%;
+                    --ytmusic-search-box-height: 36px;
+                }
+
+                /* --- Right Section (Buttons + Window Controls) --- */
+                #browser-ui-buttons {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    -webkit-app-region: no-drag;
+                }
+
+                #browser-ui-buttons .divider {
+                    width: 1px;
+                    height: 24px;
+                    background: rgba(255, 255, 255, 0.1);
+                    margin: 0 8px;
+                }
+
+                /* --- Buttons Shared Styles --- */
+                .nav-btn, .window-btn {
+                    background: transparent;
+                    border: none;
+                    color: rgba(255, 255, 255, 0.7);
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.15s ease;
+                    border-radius: 6px;
+                    font-family: 'Inter', sans-serif;
+                    padding: 0;
+                    outline: none;
+                    -webkit-app-region: no-drag;
+                }
+
+                .nav-btn:hover, .window-btn:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: #fff;
+                }
+
+                .nav-btn:active, .window-btn:active {
+                    transform: scale(0.92);
+                }
+
+                /* Buttons Sizing */
+                .nav-btn { width: 36px; height: 36px; }
+                .nav-btn svg { width: 18px; height: 18px; stroke-width: 2; }
+                .window-btn { width: 44px; height: 36px; }
+                .window-btn svg { width: 14px; height: 14px; }
+
+                /* Settings Button (Purple) */
+                .settings-btn { 
+                    color: #a855f7 !important;
+                }
+                .settings-btn:hover { 
+                    background: rgba(168, 85, 247, 0.15) !important; 
+                    color: #c084fc !important; 
+                }
+
+                /* Close Button (Red on hover) */
+                .window-btn.close-btn:hover { 
+                    background: #e81123 !important; 
+                    color: white !important; 
+                }
+                
+                /* --- Body offset to account for title bar --- */
+                body {
+                    padding-top: 48px !important;
+                }
+
+                /* --- Fix YTMusic nav bar (hide it, we replace it) --- */
+                /* We hide the nav bar but keep it in the DOM so that SVG <symbol> definitions 
+                   inside it remain accessible for the sidebar icons (which use <use> references). 
+                   Using clip and opacity instead of position:absolute off-screen. */
+                ytmusic-nav-bar {
+                    position: fixed !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                    width: 1px !important;
+                    height: 1px !important;
+                    opacity: 0 !important;
+                    overflow: hidden !important;
+                    clip: rect(0, 0, 0, 0) !important;
+                    pointer-events: none !important;
+                    z-index: -1 !important;
+                }
+
+                /* --- Fix content positioning --- */
+                ytmusic-app {
+                    margin-top: 0 !important;
+                }
+
+                #layout {
+                    margin-top: 0 !important;
+                }
+
+                /* --- Hide native voice search & cast --- */
+                #voice-search-button,
+                ytmusic-voice-search-renderer,
+                ytmusic-cast-button-renderer { 
+                    display: none !important; 
+                }
+
+                /* --- Fullscreen: Hide title bar --- */
+                :fullscreen #better-ytm-titlebar,
+                :-webkit-full-screen #better-ytm-titlebar {
+                    display: none !important;
+                }
+                :fullscreen body,
+                :-webkit-full-screen body {
+                    padding-top: 0 !important;
+                }
+            \`;
+            document.head.appendChild(style);
         }
 
-        console.log('[BrowserUI] API Check:', {
-          electronAPI: !!window.electronAPI,
-          openSettings: !!window.electronAPI?.openSettings,
-          navigate: !!window.electronAPI?.navigate
-        });
-        
-        function injectTitleBarButtons() {
-          // Remove existing if re-injecting
-          const existing = document.getElementById('browser-ui-buttons');
-          if (existing) existing.remove();
-          const existingStyle = document.getElementById('browser-ui-style');
-          if (existingStyle) existingStyle.remove();
-          
-          // The titleBarOverlay reserves ~32px at top for native Windows buttons
-          // We inject our buttons WITHIN that reserved space on the LEFT side
-          const titleBarHeight = 32;
-          
-          // Inject styles
-          const style = document.createElement('style');
-          style.id = 'browser-ui-style';
-          style.textContent = \`
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
-            
-            /* UNIFIED HEADER CONFIGURATION */
-            
-            /* 1. Container for our custom buttons (Top-Left) */
-            #browser-ui-buttons {
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              height: 64px !important; /* Match standard YTM nav bar height */
-              display: flex !important;
-              align-items: center !important;
-              gap: 4px !important;
-              padding-left: 12px !important; /* Left margin */
-              gap: 4px !important;
-              padding-left: 12px !important; /* Left margin */
-              z-index: 2147483647 !important; /* Max Z-Index to ensure it's on top of everything */
-              -webkit-app-region: no-drag !important;
-              pointer-events: auto !important;
-              font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-            }
-            
-            /* 2. Styling the native YTM Nav Bar to be the main background */
-            ytmusic-nav-bar {
-              position: fixed !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: 64px !important;
-              z-index: 2000 !important;
-              border-bottom: 1px solid rgba(255,255,255,0.1) !important;
-              -webkit-app-region: drag !important; /* Make the whole bar draggable */
-              background: #030303 !important;
-            }
-            
-            /* 3. Shift YTM Logo/Left Content to the right to make room for our buttons */
-            /* We have ~160px of buttons, need more space to avoid clipping settings button */
-            /* 3. Shift YTM Logo/Left Content to the right to make room for our buttons */
-            /* 3. Shift YTM Logo/Left Content to the right to make room for our buttons */
-            /* 3. Shift YTM Logo/Left Content to the right to make room for our buttons */
-            /* 3. Shift YTM Logo/Left Content to the right to make room for our buttons */
-            ytmusic-nav-bar .left-content {
-              margin-left: 0 !important; /* RESET MARGIN, use padding/width instead */
-              padding-left: 260px !important; /* Space for buttons */
-              width: 300px !important; /* Fixed width for left side (Increased to 300px) */
-              flex: 0 0 300px !important;
-              -webkit-app-region: no-drag !important;
-              display: flex !important;
-              align-items: center !important;
-              justify-content: flex-start !important;
-            }
-            
-            /* 4. BALANCED CENTER - NO ABSOLUTE POSITIONING */
-            ytmusic-nav-bar .center-content {
-              position: static !important; /* Disable absolute */
-              transform: none !important;
-              flex: 1 !important; /* Fill remaining space */
-              -webkit-app-region: drag !important; /* ALLOW DRAGGING on the container */
-              pointer-events: auto !important;
-              justify-content: center !important;
-              display: flex !important;
-              min-width: 0 !important; /* Allow shrinking */
-            }
-            
-            /* Protect the search box from overflowing or being too small */
-            ytmusic-search-box {
-              min-width: 200px !important;
-              max-width: 1000px !important; /* Wider search bar */
-              width: 100% !important;
-              -webkit-app-region: no-drag !important; /* Keep search box interactable */
-            }
-
-            /* Hide Cast Button - Aggressive */
-            ytmusic-cast-button-renderer,
-            ytmusic-nav-bar #cast-button,
-            ytmusic-app-header #cast-button,
-            [aria-label="Cast to a device"],
-            [title="Cast to a device"] {
-              display: none !important;
-            }
-
-            /* 5. Adjust Window Controls Area (Native TitleBarOverlay covers top-right) */
-            /* We just need to make sure the right-side content (Avatar etc) doesn't overlap native controls */
-            /* 5. Adjust Window Controls Area (Native TitleBarOverlay covers top-right) */
-            /* Force Right Content to match Left Content width to create a "Center Sandwich" */
-            ytmusic-nav-bar .right-content {
-              margin-right: 140px !important; /* Space for Min/Max/Close */
-              width: 40px !important; /* 180px (Total) - 140px (Margin) = 40px effective visual */
-              flex: 0 0 180px !important; /* Right Side Total Width (180px) - Asymmetric to Left (300px) */
-              
-              -webkit-app-region: no-drag !important;
-              justify-content: flex-end !important;
-              display: flex !important;
-              flex-shrink: 0 !important;
-            }
-
-            /* FIX SEARCH SUGGESTIONS DROPDOWN */
-            /* Ensure it follows the Asymmetric Layout */
-            ytmusic-search-suggestions-section {
-              position: fixed !important;
-              top: 52px !important; /* Align just under the search bar */
-              left: 300px !important; /* Match Left Spacer */
-              right: 180px !important; /* Match Right Spacer */
-              width: auto !important;
-              max-width: 1000px !important; /* Match Search Box Max-Width */
-              margin: 0 auto !important; /* Center within the available space */
-              z-index: 9999 !important;
-            }
-            
-            /* Ensure the dropdown content itself doesn't overflow */
-            ytmusic-search-suggestions-section #suggestions {
-              max-width: 1000px !important;
-              margin: 0 auto !important;
-            }
-
-            /* Custom Button Styling */
-            #browser-ui-buttons .nav-btn {
-              width: 32px !important;
-              height: 32px !important;
-              border: none !important;
-              background: transparent !important;
-              color: rgba(255, 255, 255, 0.7) !important;
-              cursor: pointer !important;
-              display: flex !important;
-              align-items: center !important;
-              justify-content: center !important;
-              border-radius: 8px !important;
-              transition: all 0.15s ease !important;
-              padding: 0 !important;
-              outline: none !important;
-              -webkit-app-region: no-drag !important; /* Force no-drag on buttons specifically */
-              pointer-events: auto !important; /* Ensure clicks are captured */
-            }
-            
-            #browser-ui-buttons .nav-btn:hover {
-              background: rgba(255, 255, 255, 0.1) !important;
-              color: #fff !important;
-            }
-            
-            #browser-ui-buttons .nav-btn:active {
-              transform: scale(0.92) !important;
-            }
-            
-            #browser-ui-buttons .nav-btn svg {
-              width: 18px !important;
-              height: 18px !important;
-              stroke-width: 2 !important;
-            }
-            
-            #browser-ui-buttons .nav-btn.settings-btn {
-              background: rgba(138, 43, 226, 0.15) !important;
-              color: rgba(180, 120, 255, 0.95) !important;
-              margin-left: 6px !important;
-            }
-            
-            #browser-ui-buttons .nav-btn.settings-btn:hover {
-              background: rgba(138, 43, 226, 0.35) !important;
-              color: #d4a5ff !important;
-            }
-            
-            #browser-ui-buttons .divider {
-              width: 1px !important;
-              height: 20px !important;
-              background: rgba(255, 255, 255, 0.12) !important;
-              margin: 0 6px !important;
-            }
-            
-            /* Hide the old floating settings button */
-            #better-youtube-settings-btn,
-            #custom-settings-btn {
-              display: none !important;
-            }
-            
-            /* CONTENT LAYOUT - content starts AFTER the 64px header */
-            ytmusic-app-layout {
-              margin-top: 64px !important;
-              height: calc(100vh - 64px) !important;
-              overflow-y: auto !important; /* Allow scrolling */
-              scrollbar-width: thin !important;
-            }
-            
-            /* Global scroll fix settings */
-            html, body {
-              height: 100vh !important;
-              overflow: hidden !important; /* Hide native scrollbar on body */
-              margin: 0 !important;
-              padding: 0 !important;
-              background: #030303 !important;
-            }
-            
-            ytmusic-app {
-              height: 100% !important;
-              overflow: hidden !important;
-            }
-            
-            /* Sidebar positioning */
-            ytmusic-guide-renderer,
-            ytmusic-app-layout #guide-wrapper,
-            #mini-guide-layer {
-              top: 64px !important;
-              height: calc(100vh - 64px - 72px) !important;
-            }
-            
-            /* Player bar */
-            ytmusic-player-bar {
-              position: fixed !important;
-              bottom: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              width: 100% !important;
-              height: 72px !important;
-              z-index: 2023 !important;
-              background: #030303 !important;
-            }
-          \`;
-          document.head.appendChild(style);
-          
-          // Create button container
-          const container = document.createElement('div');
-          container.id = 'browser-ui-buttons';
-          
-          // Helper to create buttons
-          const createBtn = (title, svgContent, onClick, className = '') => {
+        // --- Create Button Helper ---
+        function createBtn(type, svg, onClick) {
             const btn = document.createElement('button');
-            btn.className = 'nav-btn' + (className ? ' ' + className : '');
-            btn.title = title;
-            btn.innerHTML = svgContent;
-            btn.onclick = (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              console.log('[BrowserUI] Button clicked:', title);
-              onClick();
-            };
-            // Stop drag propagation on mousedown
-            btn.onmousedown = (e) => {
-              e.stopPropagation();
-              // Do not preventDefault here, or focus might not work (though generic buttons don't need it)
-            };
+            btn.className = (type === 'minimize' || type === 'maximize' || type === 'close') ? 'window-btn' : 'nav-btn';
+            if (type === 'close') btn.classList.add('close-btn');
+            if (type === 'settings') btn.classList.add('settings-btn');
+            btn.innerHTML = svg;
+            btn.title = type.charAt(0).toUpperCase() + type.slice(1);
+            btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
             return btn;
-          };
-          
-          // Back button
-          const backBtn = createBtn('Go back', 
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
-            () => window.electronAPI?.navigate?.('back') || window.history.back()
-          );
-          
-          // Forward button
-          const fwdBtn = createBtn('Go forward',
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
-            () => window.electronAPI?.navigate?.('forward') || window.history.forward()
-          );
-          
-          // Refresh button
-          const refreshBtn = createBtn('Refresh',
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 4v5h-5"/></svg>',
-            () => window.electronAPI?.navigate?.('refresh') || window.location.reload()
-          );
-          
-          // Divider
-          const divider = document.createElement('div');
-          divider.className = 'divider';
-          
-          // Settings button (purple accent)
-          const settingsBtn = createBtn('Settings',
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
-            () => {
-              console.log('[BrowserUI] Settings button clicked');
-              window.electronAPI?.openSettings?.().catch(err => console.error('[BrowserUI] Failed to open settings:', err));
-            },
-            'settings-btn'
-          );
-          
-          // Assemble buttons
-          container.appendChild(backBtn);
-          container.appendChild(fwdBtn);
-          container.appendChild(refreshBtn);
-          container.appendChild(divider);
-          container.appendChild(settingsBtn);
-          
-          // Insert at end of body to ensure it sits on top of other elements
-          if (document.body) {
-             document.body.appendChild(container);
-          }
-          
-          console.log('[BrowserUI] ✅ Title bar buttons injected!');
         }
 
-          // FORCE REMOVE CAST BUTTON (Deep Shadow DOM Traversal)
-          function forceRemoveCastButton() {
-            // 1. Simple Selectors
-            const selectors = [
-              'ytmusic-cast-button-renderer',
-              '[aria-label="Cast to a device"]',
-              '.cast-button'
-            ];
-            
-            selectors.forEach(sel => {
-              document.querySelectorAll(sel).forEach(el => {
-                el.remove();
-                console.log('[BrowserUI] 🗑️ Standard removed:', sel);
-              });
+        // --- Create Title Bar ---
+        function createTitleBar() {
+            if (document.getElementById('better-ytm-titlebar')) return;
+
+            const titleBar = document.createElement('div');
+            titleBar.id = 'better-ytm-titlebar';
+
+            // === Left Section: Navigation ===
+            const navSection = document.createElement('div');
+            navSection.className = 'nav-section';
+
+            const backBtn = createBtn('back', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>', () => {
+                if (window.electronAPI?.navigate) window.electronAPI.navigate('back'); else window.history.back();
+            });
+            const fwdBtn = createBtn('forward', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>', () => {
+                if (window.electronAPI?.navigate) window.electronAPI.navigate('forward'); else window.history.forward();
+            });
+            const refreshBtn = createBtn('refresh', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 4v5h-5"/></svg>', () => {
+                if (window.electronAPI?.navigate) window.electronAPI.navigate('refresh'); else window.location.reload();
             });
 
-            // 2. Deep Shadow DOM Traversal (Recursive)
-            function walk(root) {
-              if (!root) return;
-              
-              // Check Children
-              if (root.querySelectorAll) {
-                selectors.forEach(sel => {
-                  root.querySelectorAll(sel).forEach(el => {
-                    el.style.display = 'none'; // Hide first
-                    el.remove(); // Then remove
-                    console.log('[BrowserUI] 🕵️ Deep removed:', sel);
-                  });
-                });
-              }
+            navSection.appendChild(backBtn);
+            navSection.appendChild(fwdBtn);
+            navSection.appendChild(refreshBtn);
 
-              // Walk Shadow Roots
-              // Note: We can only access open shadow roots, or via specific properties
-              if (root.shadowRoot) {
-                walk(root.shadowRoot);
-              }
-              
-              // Walk Children manually to find other Shadow Roots
-              if (root.children) {
-                 for (let i = 0; i < root.children.length; i++) {
-                   walk(root.children[i]);
-                 }
-              }
-            }
+            // === Center Section: Search ===
+            const searchSection = document.createElement('div');
+            searchSection.className = 'search-section';
             
-            // Start walk from body and likely containers
-            walk(document.body);
-            const nav = document.querySelector('ytmusic-nav-bar');
-            if (nav) walk(nav);
-          }
-          
-          // --- RUN INITIALIZATION ---
-          injectTitleBarButtons();
-          forceRemoveCastButton();
-
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', injectTitleBarButtons);
-          }
-          
-          setTimeout(injectTitleBarButtons, 500);
-          setTimeout(injectTitleBarButtons, 1500);
-          
-          // Hammer Cast Button Removal
-          setInterval(forceRemoveCastButton, 2000);
-          
-          // SPA Navigation Watcher
-          let lastUrl = location.href;
-          const observer = new MutationObserver(() => {
-            if (location.href !== lastUrl) {
-              lastUrl = location.href;
-              setTimeout(injectTitleBarButtons, 100);
-              setTimeout(forceRemoveCastButton, 500); 
+            // Clone the native search box into our title bar
+            const nativeSearchBox = document.querySelector('ytmusic-search-box');
+            if (nativeSearchBox) {
+                const searchClone = nativeSearchBox.cloneNode(true);
+                searchSection.appendChild(searchClone);
+                
+                // Forward search events to native
+                searchClone.addEventListener('input', (e) => {
+                    const target = e.target;
+                    if (target && target.value !== undefined && nativeSearchBox.querySelector('input')) {
+                        nativeSearchBox.querySelector('input').value = target.value;
+                    }
+                });
             }
-          });
-          observer.observe(document, { subtree: true, childList: true });
+
+            // === Right Section: Buttons Container ===
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.id = 'browser-ui-buttons';
+
+            // Settings button
+            const settingsBtn = createBtn('settings', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>', () => {
+                window.electronAPI?.openSettings?.().catch(() => {});
+            });
+            settingsBtn.id = 'better-youtube-settings-btn-v2';
+
+            // Divider
+            const divider = document.createElement('div');
+            divider.className = 'divider';
+
+            // Window controls
+            const minBtn = createBtn('minimize', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>', () => window.electronAPI?.windowAction?.('minimize'));
+            const maxBtn = createBtn('maximize', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>', () => window.electronAPI?.windowAction?.('maximize'));
+            const closeBtn = createBtn('close', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>', () => window.electronAPI?.windowAction?.('close'));
+
+            // Note: VolumeBooster will inject itself before the divider
+            buttonsContainer.appendChild(settingsBtn);
+            buttonsContainer.appendChild(divider);
+            buttonsContainer.appendChild(minBtn);
+            buttonsContainer.appendChild(maxBtn);
+            buttonsContainer.appendChild(closeBtn);
+
+            // === Assemble Title Bar ===
+            titleBar.appendChild(navSection);
+            titleBar.appendChild(searchSection);
+            titleBar.appendChild(buttonsContainer);
+
+            document.body.insertBefore(titleBar, document.body.firstChild);
+            titleBarInjected = true;
+            console.log('[BrowserUI] ✅ Title bar injected');
+        }
+
+        // --- Init ---
+        function init() {
+            injectStyles();
+            createTitleBar();
+        }
+
+        // Run when ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+        
+        // Resilience: Check periodically (handles both missing elements and SPA navigation)
+        let lastUrl = location.href;
+        setInterval(() => {
+          // Re-inject if title bar was removed
+          if (!document.getElementById('better-ytm-titlebar')) {
+            titleBarInjected = false;
+            init();
+          }
+          // Re-inject on URL change (SPA navigation) - only if actually changed
+          const currentUrl = location.href;
+          if (currentUrl !== lastUrl) {
+            lastUrl = currentUrl;
+            // Debounce: only re-init after navigation settles
+            setTimeout(init, 500);
+          }
+        }, 10000); // Check every 10 seconds - much less aggressive for performance
+
+        console.log('[BrowserUI] ✅ YouTube Music Title Bar Configured');
       })();
     `;
-  }
-
-  public async onRendererLoaded(window: BrowserWindow): Promise<void> {
-    if (!this.isEnabled()) {
-      return;
     }
 
-    try {
-      const url = window.webContents.getURL();
-      if (!url.includes('youtube.com')) return;
+    public async onRendererLoaded(window: BrowserWindow): Promise<void> {
+        if (!this.isEnabled()) return;
+        const script = this.getRendererScript();
+        await window.webContents.executeJavaScript(script, true);
 
-      const script = this.getRendererScript();
-      await window.webContents.executeJavaScript(script, true);
-      console.log('[BrowserUI] ✅ Overlay buttons script executed');
-
-      // Re-inject after delays
-      setTimeout(async () => {
-        try {
-          const currentUrl = window.webContents.getURL();
-          if (currentUrl.includes('youtube.com')) {
-            await window.webContents.executeJavaScript(script, true);
-          }
-        } catch (err) {
-          console.error('[BrowserUI] Error re-injecting:', err);
-        }
-      }, 1500);
-    } catch (error) {
-      console.error('[BrowserUI] ❌ Error injecting script:', error);
+        // Inject again on navigation events
+        window.webContents.on('did-navigate-in-page', () => {
+            window.webContents.executeJavaScript(script, true).catch(() => { });
+        });
     }
-  }
-
-  public getConfig(): any {
-    const baseConfig = super.getConfig();
-    return {
-      ...baseConfig,
-      enabled: baseConfig.enabled !== false,
-    };
-  }
 }

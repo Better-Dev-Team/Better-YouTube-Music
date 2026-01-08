@@ -375,7 +375,7 @@ export class BetterLyrics extends BasePlugin {
          });
       }
       
-      // Fast polling for metadata changes
+      // Polling for metadata changes (reduced frequency for performance)
       let lastTitle = '';
       setInterval(() => {
           if (navigator.mediaSession.metadata) {
@@ -386,7 +386,7 @@ export class BetterLyrics extends BasePlugin {
               }
           }
           checkForLyricsTab();
-      }, 500); // Checked more frequently
+      }, 2000); // Check every 2 seconds instead of 500ms
 
     })();
     `;
