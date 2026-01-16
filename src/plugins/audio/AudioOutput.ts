@@ -44,6 +44,17 @@ export class AudioOutput extends BasePlugin {
         window.__audioOutputInjected = true;
 
         let targetDeviceId = '${deviceId}';
+        let availableDevices = [];
+
+        async function updateDeviceList() {
+           try {
+               const devices = await navigator.mediaDevices.enumerateDevices();
+               availableDevices = devices.filter(d => d.kind === 'audiooutput');
+               updateAudioDevice();
+           } catch (e) {
+               console.warn('[AudioOutput] Error enumerating devices:', e);
+           }
+        }
 
         async function updateAudioDevice() {
            const video = document.querySelector('video');
@@ -62,19 +73,13 @@ export class AudioOutput extends BasePlugin {
                return;
            }
 
-           // Validate device exists
-           try {
-               const devices = await navigator.mediaDevices.enumerateDevices();
-               const audioDevices = devices.filter(d => d.kind === 'audiooutput');
-               const deviceExists = audioDevices.some(d => d.deviceId === targetDeviceId);
-               
-               if (!deviceExists) {
-                   console.log('[AudioOutput] Target device not found:', targetDeviceId, 'Available:', audioDevices.map(d => d.label));
-                   return; 
-               }
-           } catch (e) {
-               console.warn('[AudioOutput] Error enumerating devices:', e);
-               // Proceed anyway if enumeration fails, might be a permission issue but setSinkId might work
+           // Validate device exists using cache
+           const deviceExists = availableDevices.some(d => d.deviceId === targetDeviceId);
+
+           if (!deviceExists) {
+               // We refrain from logging here on every mutation to avoid spamming console
+               // if the device is disconnected.
+               return;
            }
 
            if (video.sinkId !== targetDeviceId) {
@@ -93,15 +98,20 @@ export class AudioOutput extends BasePlugin {
         });
         observer.observe(document.body, { childList: true, subtree: true });
         
-        // Also interval check
-        setInterval(updateAudioDevice, 2000);
+        // Listen for device changes
+        if (navigator.mediaDevices) {
+            navigator.mediaDevices.addEventListener('devicechange', updateDeviceList);
+        }
         
         window.__setAudioOutputDevice = (id) => {
             targetDeviceId = id;
+            // When config changes, we might want to refresh list just in case,
+            // or just try to apply. For performance, assuming list is up to date via listener.
             updateAudioDevice();
         };
         
-        updateAudioDevice();
+        // Initial check
+        updateDeviceList();
       })();
     `;
     }
