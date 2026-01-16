@@ -3,7 +3,7 @@ import { BasePlugin } from '../Plugin';
 import type { PluginMetadata } from '../Plugin';
 import { app } from 'electron';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { stat, mkdir } from 'fs/promises';
 
 /**
  * Downloader Plugin
@@ -32,9 +32,7 @@ export class Downloader extends BasePlugin {
 
     // Ensure download directory exists
     const downloadDir = this.getDownloadDirectory();
-    if (!existsSync(downloadDir)) {
-      mkdirSync(downloadDir, { recursive: true });
-    }
+    await mkdir(downloadDir, { recursive: true });
   }
 
   private getDownloadDirectory(): string {
