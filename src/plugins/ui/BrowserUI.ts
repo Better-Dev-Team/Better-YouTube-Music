@@ -177,6 +177,25 @@ export class BrowserUI extends BasePlugin {
                     display: none !important; 
                 }
 
+                /* --- Moved Profile Button Styles --- */
+                .moved-profile-btn {
+                    -webkit-app-region: no-drag;
+                    /* Reset potentially conflicting styles */
+                    position: static !important;
+                    margin: 0 4px !important;
+                    display: inline-flex !important;
+                    align-items: center;
+                    justify-content: center;
+                    vertical-align: middle;
+                }
+
+                /* Ensure img inside profile button is visible and sized correctly if needed */
+                .moved-profile-btn img {
+                    border-radius: 50%;
+                    width: 24px;
+                    height: 24px;
+                }
+
                 /* --- Fullscreen: Hide title bar --- */
                 :fullscreen #better-ytm-titlebar,
                 :-webkit-full-screen #better-ytm-titlebar {
@@ -200,6 +219,68 @@ export class BrowserUI extends BasePlugin {
             btn.title = type.charAt(0).toUpperCase() + type.slice(1);
             btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
             return btn;
+        }
+
+        // --- Move Profile Button ---
+        function moveProfileButton() {
+            const buttonsContainer = document.getElementById('browser-ui-buttons');
+            if (!buttonsContainer) return;
+
+            // Check if we already have a profile button
+            if (buttonsContainer.querySelector('.moved-profile-btn')) return;
+
+            // Strategy 1: Look for ytmusic-settings-button (specific component)
+            let profileBtn = document.querySelector('ytmusic-settings-button');
+
+            // Strategy 2: Look in nav-bar right content
+            if (!profileBtn) {
+                const navBar = document.querySelector('ytmusic-nav-bar');
+                if (navBar) {
+                    // Try to find the right-content container
+                    // It's usually a div with class 'right-content' or similar
+                    // We iterate over children of nav-bar to find candidates
+                    const rightContent = navBar.querySelector('.right-content') ||
+                                         navBar.querySelector('#right-content') ||
+                                         navBar.lastElementChild; // Fallback
+
+                    if (rightContent) {
+                        // Iterate children to find the profile button
+                        // We exclude known elements like cast button, voice search, etc.
+                        const candidates = Array.from(rightContent.children);
+                        for (const candidate of candidates) {
+                            const tagName = candidate.tagName.toLowerCase();
+                            const id = candidate.id || '';
+                            const className = candidate.className || '';
+
+                            // Skip hidden or known non-profile elements
+                            if (tagName.includes('cast-button') ||
+                                tagName.includes('voice-search') ||
+                                tagName.includes('search-box') ||
+                                tagName.includes('logo') ||
+                                id === 'voice-search-button' ||
+                                className.includes('cast-button')) {
+                                continue;
+                            }
+
+                            // Heuristic: Profile button usually contains an image (avatar)
+                            if (candidate.querySelector('img') || candidate.querySelector('yt-img-shadow')) {
+                                profileBtn = candidate;
+                                break;
+                            }
+
+                            // Fallback: if it's the last element and not known bad
+                            // profileBtn = candidate;
+                        }
+                    }
+                }
+            }
+
+            if (profileBtn) {
+                // Move it
+                profileBtn.classList.add('moved-profile-btn');
+                buttonsContainer.insertBefore(profileBtn, buttonsContainer.firstChild);
+                console.log('[BrowserUI] 👤 Profile button relocated');
+            }
         }
 
         // --- Create Title Bar ---
@@ -286,6 +367,8 @@ export class BrowserUI extends BasePlugin {
         function init() {
             injectStyles();
             createTitleBar();
+            // Try to move profile button immediately, but it might not be ready yet
+            setTimeout(moveProfileButton, 1000);
         }
 
         // Run when ready
@@ -302,15 +385,22 @@ export class BrowserUI extends BasePlugin {
           if (!document.getElementById('better-ytm-titlebar')) {
             titleBarInjected = false;
             init();
+          } else {
+            // Also check if profile button needs moving (e.g. after re-render)
+            moveProfileButton();
           }
           // Re-inject on URL change (SPA navigation) - only if actually changed
           const currentUrl = location.href;
           if (currentUrl !== lastUrl) {
             lastUrl = currentUrl;
             // Debounce: only re-init after navigation settles
-            setTimeout(init, 500);
+            setTimeout(() => {
+                init();
+                // Check for profile button again after navigation settle
+                setTimeout(moveProfileButton, 2000);
+            }, 500);
           }
-        }, 10000); // Check every 10 seconds - much less aggressive for performance
+        }, 5000); // Check every 5 seconds (slightly more frequent to catch profile button load)
 
         console.log('[BrowserUI] ✅ YouTube Music Title Bar Configured');
       })();
