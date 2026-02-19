@@ -23,6 +23,9 @@ export class BetterLyrics extends BasePlugin {
       const config = ${config};
       if (!config.enabled) return;
 
+      if (window.__BetterLyricsInitialized) return;
+      window.__BetterLyricsInitialized = true;
+
       let lyricsContainer = null;
       let lyricsContent = null;
       let currentLyrics = [];
